@@ -1,0 +1,275 @@
+<html>
+<head>
+  <title>Simulador del Telar de la abundancia (ponzi)</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+  <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <link href="https://fonts.googleapis.com/css?family=Roboto&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/vue@2.6.10/dist/vue.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.19.0/axios.min.js"></script>
+  <style>
+    body {
+      font-family: 'Roboto', sans-serif;
+      line-height: 150%;
+      font-size: 15px;
+    }
+    h1 {
+      font-size: 24px;
+    }
+    label,
+    .label {
+      display: block;
+      padding: 5px 0;
+    }
+    .person {
+      display: inline-block;
+      margin-right: 1px;
+      margin-bottom: 1px;
+      width: 4px;
+      height: 4px;
+    }
+    .person.doesntknow {
+      background: #999;
+    }
+    .person.decidedno {
+      background: #333;
+    }
+    .person.ponzistarter {
+      background: red;
+    }
+    button {
+      cursor: pointer;
+      margin: 5px 0;
+      padding: 6px 10px;
+    }
+    select {
+      margin-left: 15px;
+    }
+    [v-cloak] { display: none }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div style="max-width: 1024px;margin: 0 auto;">
+      <h1>Simulador del Telar de la abundancia (ponzi)</h1>
+      <hr/>
+      <div v-cloak>
+        <div v-if="!started">
+          <label>
+            Población
+            <select v-model="howManyPeople">
+              <option value="100000">100.000 personas</option>
+              <option value="50000">50.000 personas</option>
+              <option value="30000">30.000 personas</option>
+              <option value="10000">10.000 personas</option>
+              <option value="1000">1.000 personas</option>
+            </select>
+          </label>
+          <label>
+            Conocen el ponzi y ya decidieron no participar
+            <select v-model="decidedNo">
+              <option value="20">20%</option>
+            </select>
+          </label>
+          <label>
+            Personas que ingresarán a cada telar
+            <select v-model="newcomersToGet">
+              <option>8</option>
+            </select>
+          </label>
+          <label>
+            Iniciadores de telar
+            <select>
+              <option>1</option>
+            </select>
+          </label>
+          <label>
+            Contactos de confianza alcanzables de cada persona
+            <select>
+              <option>200</option>
+            </select>
+          </label>
+          <label>
+            Chances de que una persona no decidida pueda y quiera participar
+            <select v-model="interestedChance">
+              <option value="50">50%</option>
+            </select>
+          </label>
+          <button @click="start()" v-if="!thinking">Iniciar simulación</button>
+          <div v-if="thinking">Cargando...</div>
+        </div>
+        <div v-if="started" style="margin: 20px 0;">
+          <div class="label">
+            Población: {{ howManyPeople }} personas
+          </div>
+          <div class="label">
+            Conocen el ponzi y ya decidieron no participar: {{ peopleDecidedNo }} personas
+          </div>
+          <div class="label">
+            Personas que ingresarán a cada telar: {{ newcomersToGet }}
+          </div>
+          <div class="label">
+            Iniciadores de telar: 1
+          </div>
+          <div class="label">
+            Contactos de confianza alcanzables de cada persona: 200
+          </div>
+          <hr/>
+
+          <div class="label">
+            Telares iniciados: {{ step }}
+          </div>
+          <div class="label">
+            Han participado en el ponzi: {{ particpants }}
+          </div>
+          <div class="label">
+            Cobraron todo: {{ gotAllMoney }}
+          </div>
+          <div class="label">
+            Personas que comenzarán telar: {{ ponziStarter }}
+          </div>
+          <div class="label">
+            Participantes a conseguir en el siguiente paso: {{ ponziStarter * newcomersToGet }}
+          </div>
+          <div v-if="peopleReached > 0" class="label">
+            Máximo número de personas contactadas por un solo participante: {{ peopleReached }} personas
+          </div>
+          <div v-if="didnTgetAllExpected > 0" class="label">
+            <strong>No consiguieron cobrar todo: {{ didnTgetAllExpected }} personas</strong>
+          </div>
+          <div v-if="lostMoney > 0" class="label">
+            <strong>Perdieron su dinero: {{ lostMoney }} personas</strong>
+          </div>
+          <div>
+            <button @click="nextStep" v-if="!thinking && ponziStarter > 0">Paso siguiente</button>
+            <div v-if="thinking">Cargando...</div>
+          </div>
+        </div>
+
+        <div>
+          <div>
+            <div class="person doesntknow"></div>
+            No conoce el ponzi o no lo han invitado
+          </div>
+          <div>
+            <div class="person decidedno"></div>
+            Conoce el ponzi y decidió no participar
+          </div>
+          <div>
+            <div class="person ponzistarter"></div>
+            Comenzará el esquema en el próximo paso
+          </div>
+        </div>
+        <div style="margin-top: 10px;">
+          <div v-for="person in people" :class="{ 'person': true, 'doesntknow': person === 0, 'decidedno': person === 1, 'ponzistarter': person === 2 }">
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    let content = [];
+
+    new Vue({
+      el: '#app',
+      data: {
+        thinking: false,
+        monkeySphere: 200,
+        newcomersToGet: 8,
+        started: false,
+        howManyPeople: 30000,
+        people: [],
+        decidedNo: 20,
+        step: 0,
+        ponziStarter: 1,
+        peopleReached: 0,
+        peopleDecidedNo: 0,
+        interestedChance: 50,
+        particpants: 0,
+        gotAllMoney: 0,
+        didnTgetAllExpected: 0,
+        lostMoney: 0
+      },
+      methods: {
+        start: function() {
+          this.thinking = true;
+          this.$nextTick(function() {
+            this.particpants += this.ponziStarter;
+            var arPeople = [];
+            for (var r = 1; r <= this.howManyPeople; r++) {
+              arPeople.push(0);
+            }
+            var percentNo = Math.round((this.howManyPeople * this.decidedNo) / 100);
+            for (var r = 1; r <= percentNo; r++) {
+              var found1 = false;
+              for (var tryFindPeople = 1; tryFindPeople <= this.monkeySphere && !found1; tryFindPeople++) {
+                var randomPerson = Math.floor(Math.random() * this.howManyPeople) + 1;
+                if (arPeople[randomPerson] === 0) {
+                  this.peopleDecidedNo++;
+                  arPeople[randomPerson] = 1;
+                  found1 = true;
+                }
+              }
+            }
+            for (var tryFindPeople = 1; tryFindPeople <= this.howManyPeople; tryFindPeople++) {
+              var randomPerson = Math.floor(Math.random() * this.howManyPeople) + 1;
+              if (arPeople[randomPerson] === 0) {
+                arPeople[randomPerson] = 2;
+                break;
+              }
+            }
+
+            this.people = arPeople;
+            this.started = true;
+            this.thinking = false;
+          });
+        },
+        nextStep: function() {
+          this.thinking = true;
+          this.$nextTick(function() {
+            this.step++;
+            var newCommers = 0
+            var maxReached = 0;
+            for (var r = 1; r <= this.howManyPeople; r++) {
+              if (this.people[r] === 2) this.people[r] = 1;
+            }
+            for (var r = 1; r <= this.ponziStarter; r++) {
+              var foundAll = 0;
+              var foundOne = false;
+              var peopleReachedForThisPerson = 0;
+              for (var tryFindPeople = 1; tryFindPeople <= this.monkeySphere && foundAll < this.newcomersToGet; tryFindPeople++) {
+                peopleReachedForThisPerson++;
+                if (peopleReachedForThisPerson > maxReached) maxReached = peopleReachedForThisPerson;
+                var randomPerson = Math.floor(Math.random() * this.howManyPeople) + 1;
+                if (this.people[randomPerson] === 0) {
+                  if (Math.floor(Math.random() * 100) > this.interestedChance) {
+                    foundAll++;
+                    foundOne = true;
+                    newCommers++;
+                    this.people[randomPerson] = 2;
+                  } else {
+                    this.peopleDecidedNo++;
+                    this.people[randomPerson] = 1;
+                  }
+                }
+                if (tryFindPeople === this.monkeySphere) {
+                  if (foundOne)
+                    this.didnTgetAllExpected++;
+                  else
+                    this.lostMoney++;
+                }
+              }
+              if (foundAll === this.newcomersToGet)
+                this.gotAllMoney++;
+            }
+            this.particpants += newCommers;
+            this.ponziStarter = newCommers;
+            this.peopleReached = maxReached;
+            this.thinking = false;
+          });
+        }
+      }
+    })
+  </script>
+</body>
+</html>
